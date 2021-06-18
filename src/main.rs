@@ -199,6 +199,7 @@ impl Sub<i128> for Fraction {
         if self.den != rhs_fract.den {
             a_fract = self * rhs_fract;
             b_fract = rhs_fract * self;
+
         }
 
         Fraction::new(a_fract.num - b_fract.num, a_fract.den)
