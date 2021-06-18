@@ -3,8 +3,9 @@ use std::time::Instant;
 use primes::{PrimeSet, factors};
 use std::fmt;
 use std::fmt::Formatter;
-use std::ops::{Add, Mul};
-use num::{Num, Integer, PrimInt, Bounded, NumCast};
+use std::ops::{Add, Mul, Div, Sub};
+use num::{Num, Integer, PrimInt, Bounded, NumCast, ToPrimitive};
+use num::traits::real::Real;
 
 
 // Find the number of blue discs in 10^12 discs needed such that the probability of drawing exactly two blue discs is 50%
@@ -47,11 +48,15 @@ fn gcd<T: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd, U: Copy
 }
 
 impl Fraction {
-    pub fn new<T, U>(num: T, den: U) -> Self {
+    pub fn new<T: ToPrimitive, U: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd>(num: T, den: U) -> Self {
+
+        if den == U::from(0).unwrap() {
+            panic!("Null value assigned to denominator")
+        }
 
         let n = Fraction {
-            num: <i128 as Trait>::From::from(num),
-            den: <u128>::From::from(den)
+            num: <i128 as NumCast>::from(num).unwrap(),
+            den: <u128 as NumCast>::from(den).unwrap()
         };
 
         n.simplify()
@@ -61,11 +66,49 @@ impl Fraction {
     pub fn simplify(&self) -> Self {
 
         let gcd = gcd(self.num, self.den);
+        if gcd == 0 {
+            return Self { num: self.num, den: self.den };
+        }
 
         Fraction {
-            num: (self.num / gcd),
+            num: (self.num / gcd as i128),
             den: (self.den / gcd)
         }
+
+    }
+
+    pub fn from_whole<T: ToPrimitive>(whole: T) -> Self {
+
+        Fraction {
+            num: <i128 as NumCast>::from(whole).unwrap(),
+            den: 1
+        }
+
+    }
+
+    pub fn print_as_reg(&self) -> String {
+
+        let num = self.num;
+        let den = self.den as i128;
+
+        if num < den {
+            return format!("{}", self);
+        }
+
+        if num % den == 0 {
+            return format!("{}", num / den);
+        }
+
+        format!("{} {}/{}", (num / den), num % den, den)
+    }
+
+    pub fn print_as_dec(&self) -> f64 {
+        self.num as f64 / self.den as f64
+    }
+
+    pub fn floor(self) -> i128 {
+
+        self.num / self.den as i128
 
     }
 }
@@ -85,8 +128,8 @@ impl Add<Self> for Fraction {
         let mut b_fract = rhs;
 
         if self.den != rhs.den {
-            a_fract = self * rhs.den;
-            b_fract = rhs * self.den;
+            a_fract = self * rhs;
+            b_fract = rhs * self;
         }
 
         Fraction::new(a_fract.num + b_fract.num, a_fract.den)
@@ -106,51 +149,74 @@ impl Add<i128> for Fraction {
     }
 }
 
-impl Mul<Self> for Fraction {
+impl Mul for Fraction {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let num = self.num * rhs.num;
-        let den = self.den * self.den;
+        let den = self.den * rhs.den;
 
         Self::new(num, den)
     }
 }
 
-impl Mul<i128> for Fraction {
+impl Div for Fraction {
     type Output = Self;
 
-    fn mul(self, rhs: i128) -> Self::Output {
-        let num = self.num * rhs;
-        let den = self.den * rhs.clone();
+    fn div(self, rhs: Self) -> Self::Output {
 
-        Self::new(num, den)
+        let reciprocal = Fraction::new(rhs.den, rhs.num);
+
+        self * reciprocal
+
     }
 }
 
+impl Sub<Self> for Fraction {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut a_fract = self;
+        let mut b_fract = rhs;
+
+        if self.den != rhs.den {
+            a_fract = self * rhs;
+            b_fract = rhs * self;
+        }
+
+        Fraction::new(a_fract.num - b_fract.num, a_fract.den)
+    }
+}
+
+impl Sub<i128> for Fraction {
+    type Output = Self;
+
+    fn sub(self, rhs: i128) -> Self::Output {
+        let rhs_fract = Fraction::from_whole(rhs);
+        let mut a_fract = self;
+        let mut b_fract = rhs_fract;
+
+        if self.den != rhs_fract.den {
+            a_fract = self * rhs_fract;
+            b_fract = rhs_fract * self;
+        }
+
+        Fraction::new(a_fract.num - b_fract.num, a_fract.den)
+    }
+}
 
 const MINIMUM_TOTAL: u64 = 1000000000001;
 
 fn main() {
 
+    let now = Instant::now();
     let target_ratio = Fraction::new(15, 21);
+    let mut total_discs = Fraction::from_whole(MINIMUM_TOTAL);
+    let mut blue_discs = Fraction::from_whole((target_ratio * total_discs).floor());
+    let mut value = (blue_discs / total_discs) * ((blue_discs - 1) / (total_discs - 1));
 
-    for i in 0..20 {
-
-        let mul_fract = target_ratio * i;
-        println!("{} * {} = {}", target_ratio, i, mul_fract);
-
-        let add_fract = mul_fract + target_ratio;
-        println!("{} + {} = {}", mul_fract, target_ratio, add_fract);
-
-        let mul_fract_b = add_fract * mul_fract;
-        println!("{} * {} = {}", add_fract, mul_fract, mul_fract_b);
-
-    }
-
-
-    /*println!("0.5 Found!");
-    println!("({} / {}) * ( {} / {}) = {:.10}", blue_discs.clone(), total_discs.clone(), (blue_discs.clone() - DEC::from(1)), (total_discs.clone() - DEC::from(1)), value);
-    println!("Solved in {}ms", now.elapsed().as_millis());*/
+    println!("0.5 Found!");
+    println!("({} / {}) * ( {} / {}) = {:.10}", blue_discs.print_as_dec(), total_discs.print_as_dec(), (blue_discs - 1).print_as_dec(), (total_discs - 1).print_as_dec(), value.print_as_dec());
+    println!("Solved in {}ms", now.elapsed().as_millis());
 
 }
