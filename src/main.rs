@@ -2,10 +2,12 @@
 use std::time::Instant;
 use primes::{PrimeSet, factors};
 use std::fmt;
-use std::fmt::Formatter;
-use std::ops::{Add, Mul, Div, Sub};
+use std::fmt::{Formatter, Debug};
+use std::ops::{Add, Mul, Div, Sub, AddAssign, SubAssign};
 use num::{Num, Integer, PrimInt, Bounded, NumCast, ToPrimitive};
 use num::traits::real::Real;
+use std::cmp::Ordering;
+use num::integer::lcm;
 
 
 // Find the number of blue discs in 10^12 discs needed such that the probability of drawing exactly two blue discs is 50%
@@ -30,16 +32,17 @@ use num::traits::real::Real;
 // As soon as it is above 0.5, we either need to reduce B or increase T
 // If we've been increasing B, we bump T
 // If V is still over 0.5 then we start reducing B until V is under 0.5
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Eq, Debug)]
 struct Fraction {
     num: i128,
     den: u128
 }
 
-fn gcd<T: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd, U: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd>(x: T, y: U) -> U {
-    let mut x = U::from(x).unwrap();
-    let mut y = y;
-    while y != U::from(0).unwrap() {
+fn gcd<T: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd + Debug, U: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd + Debug>(x: T, y: U) -> T {
+
+    let mut x = x;
+    let mut y = T::from(y).unwrap();
+    while y != T::from(0).unwrap() {
         let t = y;
         y = x % y.clone();
         x = t;
@@ -47,8 +50,27 @@ fn gcd<T: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd, U: Copy
     x
 }
 
+impl PartialOrd for Fraction {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(&&other))
+    }
+}
+
+impl Ord for Fraction {
+    fn cmp(&self, other: &Self) -> Ordering {
+
+        let lcm = lcm(self.den, other.den);
+
+        let me = Fraction::new_no_simp(self.num * (lcm / self.den) as i128, lcm);
+        let them = Fraction::new_no_simp(other.num * (lcm / other.den ) as i128, lcm);
+
+        me.num.cmp(&them.num)
+
+    }
+}
+
 impl Fraction {
-    pub fn new<T: ToPrimitive, U: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd>(num: T, den: U) -> Self {
+    pub fn new<T: ToPrimitive + Debug + Copy, U: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd + Debug>(num: T, den: U) -> Self {
 
         if den == U::from(0).unwrap() {
             panic!("Null value assigned to denominator")
@@ -62,17 +84,28 @@ impl Fraction {
         n.simplify()
     }
 
+    pub fn new_no_simp<T: ToPrimitive, U: Copy + Clone + PrimInt + Num + Bounded + NumCast + PartialOrd>(num: T, den: U) -> Self {
+        if den == U::from(0).unwrap() {
+            panic!("Null value assigned to denominator")
+        }
+
+        Fraction {
+            num: <i128 as NumCast>::from(num).unwrap(),
+            den: <u128 as NumCast>::from(den).unwrap()
+        }
+    }
+
     // Simplifies the given Fraction via common factor
     pub fn simplify(&self) -> Self {
 
-        let gcd = gcd(self.num, self.den);
+        let gcd = gcd(self.num, self.den).abs();
         if gcd == 0 {
             return Self { num: self.num, den: self.den };
         }
 
         Fraction {
-            num: (self.num / gcd as i128),
-            den: (self.den / gcd)
+            num: (self.num / gcd),
+            den: (self.den as i128 / gcd).abs() as u128
         }
 
     }
@@ -106,9 +139,9 @@ impl Fraction {
         self.num as f64 / self.den as f64
     }
 
-    pub fn floor(self) -> i128 {
+    pub fn frac_floor(self) -> i128 {
 
-        self.num / self.den as i128
+        self.num / (self.den as i128)
 
     }
 }
@@ -128,12 +161,11 @@ impl Add<Self> for Fraction {
         let mut b_fract = rhs;
 
         if self.den != rhs.den {
-            a_fract = self * rhs;
-            b_fract = rhs * self;
+            a_fract = Fraction::new_no_simp(self.num * rhs.den as i128, self.den * rhs.den);
+            b_fract = Fraction::new_no_simp(rhs.num * self.den as i128, rhs.den * self.den);
         }
 
         Fraction::new(a_fract.num + b_fract.num, a_fract.den)
-
     }
 }
 
@@ -149,12 +181,59 @@ impl Add<i128> for Fraction {
     }
 }
 
-impl Mul for Fraction {
+impl AddAssign<Self> for Fraction {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+impl AddAssign<i128> for Fraction {
+    fn add_assign(&mut self, rhs: i128) {
+        *self = *self + rhs
+    }
+}
+
+impl SubAssign<Self> for Fraction {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs
+    }
+}
+
+impl SubAssign<i128> for Fraction {
+    fn sub_assign(&mut self, rhs: i128) {
+        *self = *self - rhs
+    }
+}
+
+impl Mul<Self> for Fraction {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
+
         let num = self.num * rhs.num;
         let den = self.den * rhs.den;
+
+        Self::new(num, den)
+    }
+}
+
+impl Mul<i128> for Fraction {
+    type Output = Self;
+
+    fn mul(self, rhs: i128) -> Self::Output {
+        let num = self.num * rhs;
+        let den = self.den * rhs as u128;
+
+        Self::new(num, den)
+    }
+}
+
+impl Mul<u128> for Fraction {
+    type Output = Self;
+
+    fn mul(self, rhs: u128) -> Self::Output {
+        let num = self.num * rhs as i128;
+        let den = self.den * rhs;
 
         Self::new(num, den)
     }
@@ -180,8 +259,8 @@ impl Sub<Self> for Fraction {
         let mut b_fract = rhs;
 
         if self.den != rhs.den {
-            a_fract = self * rhs;
-            b_fract = rhs * self;
+            a_fract = Fraction::new_no_simp(self.num * rhs.den as i128, self.den * rhs.den);
+            b_fract = Fraction::new_no_simp(rhs.num * self.den as i128, rhs.den * self.den);
         }
 
         Fraction::new(a_fract.num - b_fract.num, a_fract.den)
@@ -197,8 +276,8 @@ impl Sub<i128> for Fraction {
         let mut b_fract = rhs_fract;
 
         if self.den != rhs_fract.den {
-            a_fract = self * rhs_fract;
-            b_fract = rhs_fract * self;
+            a_fract = Fraction::new(self.num * rhs_fract.den as i128, self.den * rhs_fract.den);
+            b_fract = Fraction::new(rhs_fract.num * self.den as i128, rhs_fract.den * self.den);
 
         }
 
@@ -211,13 +290,58 @@ const MINIMUM_TOTAL: u64 = 1000000000001;
 fn main() {
 
     let now = Instant::now();
-    let target_ratio = Fraction::new(15, 21);
+    let initial_ratio = Fraction::new(15, 21);
+    let target = Fraction::new(1, 2);
     let mut total_discs = Fraction::from_whole(MINIMUM_TOTAL);
-    let mut blue_discs = Fraction::from_whole((target_ratio * total_discs).floor());
-    let mut value = (blue_discs / total_discs) * ((blue_discs - 1) / (total_discs - 1));
+    let mut blue_discs = Fraction::from_whole((initial_ratio * total_discs).frac_floor());
+    let mut value = Fraction::from_whole(0);
+    let mut blue_disc_incr = true;
+
+    let mut loop_ct = 0;
+
+    loop {
+
+        value = (blue_discs / total_discs) * ((blue_discs - 1) / (total_discs - 1));
+
+        let swing = Fraction::from_whole(((value.print_as_dec() - target.print_as_dec()) * total_discs.print_as_dec()).abs().floor().max(1.0));
+
+        if value == target {
+            break;
+        }
+
+        println!("({} / {}) * ( {} / {}) = [{}] {:.10} :::::::: swing: {} * {} = {}", blue_discs.print_as_dec(), total_discs.print_as_dec(), (blue_discs - 1).print_as_dec(), (total_discs - 1).print_as_dec(), value, value.print_as_dec(),value - target, total_discs.print_as_dec(), swing.print_as_dec());
+
+        if value < target {
+            println!("Val is too low! ({} > {})", value.print_as_dec(), target.print_as_dec());
+            if blue_disc_incr {
+                println!("Incr blue");
+                blue_discs += swing;
+            } else {
+                println!("Incr all");
+                total_discs += 1;
+                blue_discs += 2;
+                blue_disc_incr = true;
+            }
+        }
+
+        if value > target {
+            println!("Val too high! ({} > {})", value.print_as_dec(), target.print_as_dec());
+            if blue_disc_incr {
+                println!("Incr all");
+                blue_disc_incr = false;
+                total_discs += 1;
+                blue_discs += 1;
+            } else {
+                println!("Decr Blue");
+                blue_discs -= swing;
+            }
+        }
+
+        loop_ct += 1;
+    }
 
     println!("0.5 Found!");
-    println!("({} / {}) * ( {} / {}) = {:.10}", blue_discs.print_as_dec(), total_discs.print_as_dec(), (blue_discs - 1).print_as_dec(), (total_discs - 1).print_as_dec(), value.print_as_dec());
-    println!("Solved in {}ms", now.elapsed().as_millis());
+    println!("({} / {}) * ( {} / {}) = [{}] {:.10}", blue_discs.print_as_dec(), total_discs.print_as_dec(), (blue_discs - 1).print_as_dec(), (total_discs - 1).print_as_dec(), value, value.print_as_dec());
+    println!("Solved in {}ms, {} iterations", now.elapsed().as_millis(), loop_ct);
 
 }
